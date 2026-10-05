@@ -1,6 +1,16 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -46,6 +56,7 @@ class Basin(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     filature: Mapped[Filature] = relationship(back_populates="basins")
     readings: Mapped[list["BathReading"]] = relationship(back_populates="basin")
+    seals: Mapped[list["LeadSeal"]] = relationship(back_populates="basin")
 
 
 class BathReading(Base):
@@ -57,3 +68,34 @@ class BathReading(Base):
     water_temp_c: Mapped[float] = mapped_column(Float)
     operator: Mapped[str] = mapped_column(String(64), default="")
     basin: Mapped[Basin] = relationship(back_populates="readings")
+
+
+class LeadSeal(Base):
+    """茧笼铅封：未解封（unsealed_at 为空）期间，铅封号与盆均不得重复占用。"""
+
+    __tablename__ = "lead_seals"
+    __table_args__ = (
+        Index(
+            "uq_seal_number_active",
+            "seal_number",
+            unique=True,
+            postgresql_where=text("unsealed_at IS NULL"),
+        ),
+        Index(
+            "uq_seal_basin_active",
+            "basin_id",
+            unique=True,
+            postgresql_where=text("unsealed_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    basin_id: Mapped[int] = mapped_column(ForeignKey("basins.id"))
+    seal_number: Mapped[int] = mapped_column(Integer)
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    unsealed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    bound_by: Mapped[str] = mapped_column(String(64))
+    unsealed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    basin: Mapped[Basin] = relationship(back_populates="seals")
