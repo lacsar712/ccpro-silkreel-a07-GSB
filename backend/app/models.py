@@ -1,6 +1,17 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -46,6 +57,7 @@ class Basin(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     filature: Mapped[Filature] = relationship(back_populates="basins")
     readings: Mapped[list["BathReading"]] = relationship(back_populates="basin")
+    seals: Mapped[list["LeadSeal"]] = relationship(back_populates="basin")
 
 
 class BathReading(Base):
@@ -57,3 +69,32 @@ class BathReading(Base):
     water_temp_c: Mapped[float] = mapped_column(Float)
     operator: Mapped[str] = mapped_column(String(64), default="")
     basin: Mapped[Basin] = relationship(back_populates="readings")
+
+
+class LeadSeal(Base):
+    """茧笼铅封：同一铅封号未解封期间不得绑第二盆，同一盆未解封最多一把。"""
+
+    __tablename__ = "lead_seals"
+    __table_args__ = (
+        CheckConstraint("seal_no BETWEEN 1 AND 999", name="ck_lead_seals_no_range"),
+        Index(
+            "uq_lead_seals_open_no",
+            "seal_no",
+            unique=True,
+            postgresql_where=text("unsealed_at IS NULL"),
+        ),
+        Index(
+            "uq_lead_seals_open_basin",
+            "basin_id",
+            unique=True,
+            postgresql_where=text("unsealed_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    basin_id: Mapped[int] = mapped_column(ForeignKey("basins.id"))
+    seal_no: Mapped[int] = mapped_column(Integer)
+    bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    unsealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bound_by: Mapped[str] = mapped_column(String(64), default="")
+    basin: Mapped[Basin] = relationship(back_populates="seals")
